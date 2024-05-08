@@ -1,0 +1,75 @@
+name: APIM STORAGE POLICY
+description: 'deploy APIM policy for storage account read data'
+inputs:
+   ad_client:
+     description: 'client id'
+     required: true
+   ad_client_secret:
+     description: 'client secret'
+     required: true
+   ad_tenant_id: 
+     description: 'tenant id'
+     required: true
+   subscription_id: 
+      description: 'subcription id'
+      required: true
+   api_name: 
+     description: 'api name'
+     required: true
+   blob_container_name: 
+     description: 'storage container name'
+     required: true
+   blob_name: 
+     description: 'blob name'
+     required: true
+   policy_path:
+     description: 'policy path'
+     required: true
+   environment_name:
+     description: 'environment name'
+     required: true
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v2
+    - name: Update vars with env
+      shell: pwsh
+      run: |
+         echo "RG_NAME=rg-${{inputs.environment_name}}-apim" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf-8 -Append
+         echo "APIM_NAME= apim-${{inputs.environment_name}}-int" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf-8 -Append
+         echo "AAD_APP_NAME=api-${{inputs.environment_name}}-backend-${{inputs.apim_name}}" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf-8 -Append
+         echo "STORAGE_ACC_NAME=stg${{inputs.environment_name}}stack" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf-8 -Append
+         
+    - name: Install Az Module
+      shell: pwsh
+      run: Install-Module -Name Az.Accounts -Scope CurrentUser -Repository PSGallery -force
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        client-id: ${{ inputs.ad_client }}
+        tenant-id: ${{ inputs.ad_tenant_id }}
+        subscription-id: ${{ inputs.subscription_id }} 
+        enable-AzPSSession: true
+    
+    - name: Update APIM policy
+      id: apim_policy
+      uses: azure/powershell@v1
+      with:
+        inlineScript: |
+          $applicationID = (Get-AzADApplication -DisplayName "${{env.AAD_APP_NAME}}").AppId
+          $PolicyPath = "${{inputs.policy_path}}"
+          $apimContext = New-AzApiManagementContext -ResourceGroupName "${{env.RG_NAME}}" -ServiceName "${{env.APIM_NAME}}"
+          $Policy = Get-Content -Path $PolicyPath
+
+          #################### updating the static placeholders with dynamic values #################
+          $Policy = $Policy.replace('#{BACKEND_APP_ID}#', $applicationID)
+          $Policy = $Policy.replace('#{TENANT_ID}#', ${{inputs.ad_tenant_id}})
+          $Policy = $Policy.replace('#{CLAIM_ROLE}#', ${{inputs.apim_name}}.${{inputs.apim_operation_name}})
+          $Policy = $Policy.replace('#{STORAGE_ACC_NAME}#', ${{env.STORAGE_ACC_NAME}})
+          $Policy = $Policy.replace('#{STORAGE_CONT_NAME}#', ${{inputs.blob_container_name}})
+          $Policy = $Policy.replace('#{FILE_NAME}#', ${{inputs.blob_name}})
+
+          Set-Content -Path $PolicyPath -Value $Policy
+          Set-AzApiManagementPolicy -Context $apimContext -ApiId "${{inputs.apim_name}}" -OperationId "${{inputs.apim_operation_name}}" -PolicyFilePath -Format "application/vnd.ms-azure-apim.policy.raw+xml"
+        azPSVersion: latest

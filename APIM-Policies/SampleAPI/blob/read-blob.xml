@@ -1,0 +1,32 @@
+<!-- Policy to Read Blob from storage account -->
+<policies>
+  <inbound>
+      <base/>
+      <set-variable name="x-ms-date" value="@(DateTime.UtcNow.ToString("R"))" />
+      <authentication-managed-identity resource="https://storage.azure.com" output-token-variable-name="msi-access-token" ignore-error="false" />
+      <set-header name="Authorization" exists-action="override">
+         <value> @("Bearer "+ (string)context.Variables["ms-access-token"]) </value>
+      </set-header>
+      <set-header name="Content-Type" exists-action="override">
+         <value>application/json </value>
+      </set-header>
+      <set-header name="x-ms-date" exists-action="override">
+         <value>@((string)context.Variables["x-ms-date"])</value>
+      </set-header>
+      <set-header name="x-ms-version" exists-action="override">
+         <value>2019-04-01</value>
+      </set-header>
+      <set-method>GET</set-method>
+      <set-backend-service base-url="https://#{STORAGE_ACC_NAME}#.blob.core.windows.net/" />
+      <rewrite-uri template="#{STORAGE_CONT_NAME}#/#{FILE_NAME}#" />
+  </inbound>
+  <backend>
+     <base/>
+  </backend>
+  <outbound>
+      <base/>
+  </outbound>
+  <on-error>
+      <base/>
+  </on-error>
+</policies>
